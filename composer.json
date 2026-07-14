@@ -1,0 +1,11 @@
+{
+    "name": "vijaymahes/slm-platform",
+    "description": "Smart Lifecycle Management Platform using RAG + MCP + Agentic AI",
+    "authors": [
+        {
+            "name": "Vijay Mahes",
+            "email": "Vijaypradhap2004@gmail.com"
+        }
+    ],
+    "require": {}
+}

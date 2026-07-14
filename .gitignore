@@ -1,0 +1,28 @@
+# Python virtual environment
+backend/.venv/
+**/__pycache__/
+**/*.pyc
+backend/*.db
+.pytest_cache/
+
+# Node modules / frontend build
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/build/
+
+# Environments
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
