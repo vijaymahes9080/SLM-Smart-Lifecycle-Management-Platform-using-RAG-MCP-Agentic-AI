@@ -3,9 +3,10 @@
 import React, { useState, useEffect, useRef } from "react";
 import { 
   Play, Cpu, Database, Award, Layers, Terminal as TermIcon, 
-  Plus, CheckCircle, AlertTriangle, Activity, Settings, RefreshCw, BarChart2, Share2, Shield, Eye
+  Plus, CheckCircle, AlertTriangle, Activity, Settings, RefreshCw, BarChart2, Share2, Shield, Eye,
+  Folder, FileText, FileCode, Trash2, Save, FilePlus, Laptop, Smartphone, ExternalLink, Search, Code
 } from "lucide-react";
-import { apiService, GoalSummary, GoalDetail, KnowledgeGraph, AnalyticsMetrics } from "../services/api";
+import { apiService, GoalSummary, GoalDetail, KnowledgeGraph, AnalyticsMetrics, WorkspaceFile } from "../services/api";
 
 const AGENTS = [
   { name: "Planner", desc: "Lifecycle execution planning & milestone structure", color: "border-purple-500 text-purple-400" },
@@ -30,10 +31,22 @@ export default function Dashboard() {
   const [analytics, setAnalytics] = useState<AnalyticsMetrics | null>(null);
   const [prompt, setPrompt] = useState("");
   const [logs, setLogs] = useState<any[]>([]);
-  const [activeTab, setActiveTab] = useState<"agents" | "knowledge" | "analytics">("agents");
+  const [activeTab, setActiveTab] = useState<"agents" | "knowledge" | "analytics" | "sandbox">("agents");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isExecuting, setIsExecuting] = useState(false);
   const [selectedNode, setSelectedNode] = useState<any>(null);
+
+  // Sandbox State Hooks
+  const [workspaceFiles, setWorkspaceFiles] = useState<WorkspaceFile[]>([]);
+  const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
+  const [selectedFileContent, setSelectedFileContent] = useState<string>("");
+  const [editedFileContent, setEditedFileContent] = useState<string>("");
+  const [previewLayout, setPreviewLayout] = useState<"desktop" | "mobile">("desktop");
+  const [newFileName, setNewFileName] = useState("");
+  const [isNewFileMode, setIsNewFileMode] = useState(false);
+  const [isSavingFile, setIsSavingFile] = useState(false);
+  const [isLoadingFiles, setIsLoadingFiles] = useState(false);
+  const [fileSearchQuery, setFileSearchQuery] = useState("");
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const logTerminalEndRef = useRef<HTMLDivElement | null>(null);
@@ -110,6 +123,94 @@ export default function Dashboard() {
       drawGraph();
     }
   }, [activeTab, graph]);
+
+  // Load workspace files if activeTab is sandbox
+  useEffect(() => {
+    if (activeTab === "sandbox") {
+      loadWorkspaceFiles();
+    }
+  }, [activeTab]);
+
+  const loadWorkspaceFiles = async () => {
+    setIsLoadingFiles(true);
+    try {
+      const data = await apiService.fetchWorkspaceFiles();
+      setWorkspaceFiles(data);
+      // Auto-select first file if none selected
+      if (data.length > 0 && !selectedFilePath) {
+        handleSelectFile(data[0].path);
+      }
+    } catch (e) {
+      console.error("Failed to load workspace files:", e);
+    } finally {
+      setIsLoadingFiles(false);
+    }
+  };
+
+  const handleSelectFile = async (path: string) => {
+    setSelectedFilePath(path);
+    try {
+      const data = await apiService.fetchWorkspaceFile(path);
+      setSelectedFileContent(data.content);
+      setEditedFileContent(data.content);
+    } catch (e) {
+      console.error("Failed to load file content:", e);
+    }
+  };
+
+  const handleSaveFile = async () => {
+    if (!selectedFilePath) return;
+    setIsSavingFile(true);
+    try {
+      await apiService.saveWorkspaceFile(selectedFilePath, editedFileContent);
+      setSelectedFileContent(editedFileContent);
+      // Refresh list to update modified time and size
+      const data = await apiService.fetchWorkspaceFiles();
+      setWorkspaceFiles(data);
+    } catch (e) {
+      alert("Failed to save file: " + e);
+    } finally {
+      setIsSavingFile(false);
+    }
+  };
+
+  const handleDeleteFile = async (path: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!confirm(`Are you sure you want to delete ${path}?`)) return;
+    try {
+      await apiService.deleteWorkspaceFile(path);
+      if (selectedFilePath === path) {
+        setSelectedFilePath(null);
+        setSelectedFileContent("");
+        setEditedFileContent("");
+      }
+      loadWorkspaceFiles();
+    } catch (e) {
+      alert("Failed to delete file: " + e);
+    }
+  };
+
+  const handleCreateFile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newFileName.trim()) return;
+    
+    // Ensure file doesn't start with backend/frontend paths to protect system code
+    const parts = newFileName.split("/");
+    if (["backend", "frontend", ".git", ".venv", "node_modules"].includes(parts[0])) {
+      alert("Cannot create files inside system directories.");
+      return;
+    }
+
+    try {
+      await apiService.saveWorkspaceFile(newFileName, "<!-- Created in Sandbox -->\n");
+      setNewFileName("");
+      setIsNewFileMode(false);
+      await loadWorkspaceFiles();
+      handleSelectFile(newFileName);
+    } catch (e) {
+      alert("Failed to create file: " + e);
+    }
+  };
 
   const loadGoals = async () => {
     try {
@@ -492,6 +593,15 @@ export default function Dashboard() {
                 <BarChart2 className="h-4 w-4" />
                 Analytics & Evolution
               </button>
+              <button
+                onClick={() => setActiveTab("sandbox")}
+                className={`px-6 py-3 border-b-2 text-sm font-medium font-mono flex items-center gap-2 transition-all duration-300 ${
+                  activeTab === "sandbox" ? "border-purple-500 text-purple-400 bg-purple-500/5" : "border-transparent text-gray-400 hover:text-gray-200"
+                }`}
+              >
+                <Code className="h-4 w-4" />
+                Live Sandbox & Explorer
+              </button>
             </div>
 
             {/* Tabs content panels */}
@@ -677,6 +787,262 @@ export default function Dashboard() {
                         }
                       </div>
                     </div>
+                  </div>
+
+                </div>
+              )}
+
+              {/* Tab 4: Sandbox & Explorer */}
+              {activeTab === "sandbox" && (
+                <div className="h-full flex overflow-hidden bg-black/10">
+                  
+                  {/* File List Sidebar */}
+                  <div className="w-72 border-r border-white/5 flex flex-col bg-black/20 flex-shrink-0">
+                    <div className="p-4 border-b border-white/5 flex flex-col gap-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-mono uppercase text-cyan-400 font-bold tracking-wider">Workspace Files</span>
+                        <button
+                          onClick={() => setIsNewFileMode(!isNewFileMode)}
+                          className="flex items-center gap-1 text-[10px] bg-purple-500/20 text-purple-400 border border-purple-500/30 px-2 py-0.5 rounded hover:bg-purple-500/30 transition-all font-mono"
+                        >
+                          <Plus className="h-3 w-3" /> Add
+                        </button>
+                      </div>
+
+                      {/* Search files input */}
+                      <div className="relative">
+                        <input
+                          type="text"
+                          placeholder="Search files..."
+                          value={fileSearchQuery}
+                          onChange={(e) => setFileSearchQuery(e.target.value)}
+                          className="w-full px-8 py-1.5 text-xs bg-black/40 border border-white/10 rounded focus:outline-none focus:border-purple-500/50 text-white placeholder-gray-500 font-mono"
+                        />
+                        <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-gray-500" />
+                      </div>
+
+                      {/* Create New File form */}
+                      {isNewFileMode && (
+                        <form onSubmit={handleCreateFile} className="flex flex-col gap-2 mt-1 bg-white/5 border border-white/10 p-2 rounded">
+                          <input
+                            type="text"
+                            placeholder="sandbox/index.html"
+                            value={newFileName}
+                            onChange={(e) => setNewFileName(e.target.value)}
+                            className="px-2 py-1 text-xs bg-black/60 border border-white/10 rounded focus:outline-none text-white font-mono"
+                            required
+                          />
+                          <div className="flex justify-end gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => setIsNewFileMode(false)}
+                              className="px-2 py-0.5 text-[9px] bg-gray-800 text-gray-400 rounded hover:bg-gray-700 font-mono"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              type="submit"
+                              className="px-2 py-0.5 text-[9px] bg-purple-600 text-white rounded hover:bg-purple-500 font-mono"
+                            >
+                              Create
+                            </button>
+                          </div>
+                        </form>
+                      )}
+                    </div>
+
+                    {/* Files List */}
+                    <div className="flex-1 overflow-y-auto p-3 space-y-1.5">
+                      {isLoadingFiles ? (
+                        <div className="flex justify-center items-center py-20 text-gray-500 font-mono text-xs">
+                          <RefreshCw className="h-4 w-4 animate-spin mr-2 text-purple-400" /> Scanning...
+                        </div>
+                      ) : workspaceFiles.filter(f => f.path.toLowerCase().includes(fileSearchQuery.toLowerCase())).length === 0 ? (
+                        <div className="text-center py-20 text-gray-500 text-xs italic font-mono">
+                          No files found.
+                        </div>
+                      ) : (
+                        workspaceFiles
+                          .filter(f => f.path.toLowerCase().includes(fileSearchQuery.toLowerCase()))
+                          .map((file) => {
+                            const isSelected = selectedFilePath === file.path;
+                            const isHtml = file.path.endsWith(".html");
+                            const isSvg = file.path.endsWith(".svg");
+                            
+                            return (
+                              <div
+                                key={file.path}
+                                onClick={() => handleSelectFile(file.path)}
+                                className={`group flex items-center justify-between p-2.5 rounded cursor-pointer transition-all duration-300 border ${
+                                  isSelected
+                                    ? "bg-purple-950/20 border-purple-500/40 text-white shadow-[0_0_10px_rgba(139,92,246,0.15)]"
+                                    : "bg-white/2 border-transparent text-gray-400 hover:bg-white/5 hover:text-white"
+                                }`}
+                              >
+                                <div className="flex items-center gap-2 truncate pr-2">
+                                  {isHtml ? (
+                                    <FileCode className="h-4 w-4 text-cyan-400 flex-shrink-0" />
+                                  ) : isSvg ? (
+                                    <FileCode className="h-4 w-4 text-pink-400 flex-shrink-0" />
+                                  ) : (
+                                    <FileText className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                                  )}
+                                  <div className="flex flex-col truncate">
+                                    <span className="text-xs font-mono truncate">{file.path}</span>
+                                    <span className="text-[9px] text-gray-500 font-mono">
+                                      {(file.size / 1024).toFixed(1)} KB
+                                    </span>
+                                  </div>
+                                </div>
+                                <button
+                                  onClick={(e) => handleDeleteFile(file.path, e)}
+                                  className="opacity-0 group-hover:opacity-100 text-gray-500 hover:text-red-400 p-0.5 rounded transition-all"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
+                            );
+                          })
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Main File Content Area (Editor + Preview) */}
+                  <div className="flex-1 flex overflow-hidden">
+                    
+                    {/* Editor Section */}
+                    <div className="flex-1 flex flex-col border-r border-white/5 bg-black/40 overflow-hidden">
+                      
+                      {/* Editor Header */}
+                      <div className="px-5 py-3 border-b border-white/5 flex items-center justify-between bg-black/40 flex-shrink-0">
+                        <div className="flex items-center gap-2">
+                          <TermIcon className="h-4 w-4 text-cyan-400" />
+                          <span className="text-xs font-mono font-bold text-gray-300 font-bold truncate max-w-xs">
+                            {selectedFilePath || "No File Selected"}
+                          </span>
+                          {selectedFilePath && editedFileContent !== selectedFileContent && (
+                            <span className="text-[9px] bg-amber-500/20 text-amber-400 border border-amber-500/30 px-1.5 py-0.5 rounded font-mono">
+                              unsaved edits
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={handleSaveFile}
+                            disabled={!selectedFilePath || isSavingFile || editedFileContent === selectedFileContent}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 disabled:opacity-40 text-white rounded text-xs font-semibold transition-all duration-300 font-mono shadow-[0_0_10px_rgba(139,92,246,0.15)]"
+                          >
+                            {isSavingFile ? (
+                              <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <Save className="h-3.5 w-3.5" />
+                            )}
+                            <span>Save Changes</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Custom Code Editor */}
+                      <div className="flex-1 flex overflow-hidden font-mono text-xs relative">
+                        {selectedFilePath ? (
+                          <textarea
+                            value={editedFileContent}
+                            onChange={(e) => setEditedFileContent(e.target.value)}
+                            className="flex-1 p-5 bg-[#05070B] text-gray-200 outline-none resize-none font-mono leading-relaxed overflow-y-auto border-none"
+                            spellCheck={false}
+                            placeholder="Type code here..."
+                          />
+                        ) : (
+                          <div className="flex-1 flex items-center justify-center text-center text-gray-500 italic p-6">
+                            Select a file to inspect and customize its implementation details.
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Preview Section */}
+                    <div className="w-[500px] xl:w-[600px] flex flex-col bg-black/20 overflow-hidden flex-shrink-0">
+                      
+                      {/* Preview Header */}
+                      <div className="px-5 py-3 border-b border-white/5 flex items-center justify-between bg-black/40 flex-shrink-0">
+                        <div className="flex items-center gap-2">
+                          <Eye className="h-4 w-4 text-purple-400" />
+                          <span className="text-xs font-mono font-bold text-gray-300">Live Preview Canvas</span>
+                        </div>
+                        
+                        <div className="flex items-center gap-1.5">
+                          {/* Layout Toggles */}
+                          <button
+                            onClick={() => setPreviewLayout("desktop")}
+                            className={`p-1.5 rounded transition-all ${
+                              previewLayout === "desktop" ? "bg-white/10 text-cyan-400 border border-white/10" : "text-gray-500 hover:text-gray-300 border border-transparent"
+                            }`}
+                            title="Desktop View"
+                          >
+                            <Laptop className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            onClick={() => setPreviewLayout("mobile")}
+                            className={`p-1.5 rounded transition-all ${
+                              previewLayout === "mobile" ? "bg-white/10 text-cyan-400 border border-white/10" : "text-gray-500 hover:text-gray-300 border border-transparent"
+                            }`}
+                            title="Mobile View"
+                          >
+                            <Smartphone className="h-3.5 w-3.5" />
+                          </button>
+                          
+                          {selectedFilePath && (
+                            <a
+                              href={apiService.getWorkspaceFilePreviewUrl(selectedFilePath)}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="p-1.5 text-gray-500 hover:text-gray-300 border border-transparent transition-all ml-1"
+                              title="Open in new tab"
+                            >
+                              <ExternalLink className="h-3.5 w-3.5" />
+                            </a>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Interactive Preview Canvas */}
+                      <div className="flex-1 bg-[#0A0D15]/80 p-4 flex items-center justify-center overflow-auto relative">
+                        {selectedFilePath && (selectedFilePath.endsWith(".html") || selectedFilePath.endsWith(".svg")) ? (
+                          <div 
+                            className={`h-full border border-white/5 rounded-lg overflow-hidden bg-white shadow-2xl transition-all duration-300 flex flex-col ${
+                              previewLayout === "mobile" ? "w-[360px] max-h-[640px]" : "w-full"
+                            }`}
+                          >
+                            {/* Browser top-bar */}
+                            <div className="h-8 bg-gray-100 border-b border-gray-200 px-3 flex items-center gap-1.5 flex-shrink-0">
+                              <div className="h-2.5 w-2.5 bg-red-400 rounded-full" />
+                              <div className="h-2.5 w-2.5 bg-yellow-400 rounded-full" />
+                              <div className="h-2.5 w-2.5 bg-green-400 rounded-full" />
+                              <div className="flex-1 bg-white border border-gray-200 rounded px-2.5 py-0.5 text-[10px] text-gray-400 truncate font-mono ml-3">
+                                {apiService.getWorkspaceFilePreviewUrl(selectedFilePath)}
+                              </div>
+                            </div>
+                            
+                            {/* Browser iframe */}
+                            <iframe
+                              key={selectedFilePath + "_" + selectedFileContent.length}
+                              src={apiService.getWorkspaceFilePreviewUrl(selectedFilePath)}
+                              className="flex-1 w-full bg-white border-none"
+                              title="Workspace Sandbox Live View"
+                            />
+                          </div>
+                        ) : (
+                          <div className="text-center p-6 space-y-3">
+                            <Code className="h-10 w-10 text-gray-600 mx-auto animate-pulse" />
+                            <h4 className="text-sm font-semibold text-white font-mono">No Preview Available</h4>
+                            <p className="text-xs text-gray-500 max-w-[280px] leading-relaxed mx-auto">
+                              Live canvas preview is available for HTML or SVG files. Select or create an HTML file (e.g., `index.html`) to activate live rendering.
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
                   </div>
 
                 </div>

@@ -1,5 +1,11 @@
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8020";
 
+export interface WorkspaceFile {
+  path: string;
+  size: number;
+  modified: string;
+}
+
 export interface GoalSummary {
   id: string;
   prompt: string;
@@ -121,5 +127,39 @@ export const apiService = {
 
   getLogsStreamUrl(goalId: string): string {
     return `${BASE_URL}/api/goals/${goalId}/logs/stream`;
+  },
+
+  async fetchWorkspaceFiles(): Promise<WorkspaceFile[]> {
+    const res = await fetch(`${BASE_URL}/api/workspace/files`);
+    if (!res.ok) throw new Error("Failed to fetch workspace files");
+    return res.json();
+  },
+
+  async fetchWorkspaceFile(path: string): Promise<{ path: string; content: string }> {
+    const res = await fetch(`${BASE_URL}/api/workspace/file?path=${encodeURIComponent(path)}`);
+    if (!res.ok) throw new Error("Failed to fetch workspace file content");
+    return res.json();
+  },
+
+  async saveWorkspaceFile(path: string, content: string): Promise<{ status: string; path: string }> {
+    const res = await fetch(`${BASE_URL}/api/workspace/file`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path, content })
+    });
+    if (!res.ok) throw new Error("Failed to save workspace file");
+    return res.json();
+  },
+
+  async deleteWorkspaceFile(path: string): Promise<{ status: string; path: string }> {
+    const res = await fetch(`${BASE_URL}/api/workspace/file?path=${encodeURIComponent(path)}`, {
+      method: "DELETE"
+    });
+    if (!res.ok) throw new Error("Failed to delete workspace file");
+    return res.json();
+  },
+
+  getWorkspaceFilePreviewUrl(path: string): string {
+    return `${BASE_URL}/api/workspace/preview/${path}`;
   }
 };

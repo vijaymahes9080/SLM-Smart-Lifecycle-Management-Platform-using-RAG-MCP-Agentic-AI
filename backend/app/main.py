@@ -4,7 +4,8 @@ import json
 from datetime import datetime
 from fastapi import FastAPI, Depends, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, FileResponse
+import mimetypes
 from sqlalchemy.orm import Session
 from typing import List, Dict, Any
 
@@ -300,3 +301,118 @@ def get_analytics(db: Session = Depends(get_db)):
             }
         }
     }
+
+@app.get("/api/workspace/files")
+def get_workspace_files():
+    ignored_dirs = {
+        "backend", "frontend", ".git", ".venv", ".pytest_cache", 
+        "__pycache__", "node_modules", ".next", ".agents"
+    }
+    ignored_files = {
+        ".env", ".env.example", ".gitignore", "README.md", 
+        "composer.json", "slm_platform.db"
+    }
+    
+    workspace_dir = settings.WORKSPACE_DIR
+    files_list = []
+    
+    for root, dirs, files in os.walk(workspace_dir):
+        # Filter ignored directories in-place to avoid traversing them
+        dirs[:] = [d for d in dirs if d not in ignored_dirs and not d.startswith(".")]
+        
+        for file in files:
+            if file in ignored_files or file.startswith("."):
+                continue
+            
+            full_path = os.path.join(root, file)
+            rel_path = os.path.relpath(full_path, workspace_dir)
+            files_list.append({
+                "path": rel_path.replace("\\", "/"),
+                "size": os.path.getsize(full_path),
+                "modified": datetime.fromtimestamp(os.path.getmtime(full_path)).isoformat()
+            })
+            
+    return files_list
+
+@app.get("/api/workspace/file")
+def get_workspace_file_content(path: str):
+    workspace_dir = settings.WORKSPACE_DIR
+    full_path = os.path.abspath(os.path.join(workspace_dir, path))
+    if not full_path.startswith(os.path.abspath(workspace_dir)):
+        raise HTTPException(status_code=403, detail="Access denied: outside workspace bounds.")
+        
+    if not os.path.exists(full_path) or os.path.isdir(full_path):
+        raise HTTPException(status_code=404, detail="File not found.")
+        
+    try:
+        with open(full_path, "r", encoding="utf-8", errors="ignore") as f:
+            content = f.read()
+        return {"path": path, "content": content}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to read file: {str(e)}")
+
+@app.post("/api/workspace/file")
+def save_workspace_file_content(payload: Dict[str, str]):
+    path = payload.get("path")
+    content = payload.get("content", "")
+    if not path:
+        raise HTTPException(status_code=400, detail="Path is required.")
+        
+    workspace_dir = settings.WORKSPACE_DIR
+    full_path = os.path.abspath(os.path.join(workspace_dir, path))
+    if not full_path.startswith(os.path.abspath(workspace_dir)):
+        raise HTTPException(status_code=403, detail="Access denied: outside workspace bounds.")
+        
+    # Prevent writing over backend or frontend folders
+    rel_path = os.path.relpath(full_path, workspace_dir).replace("\\", "/")
+    parts = rel_path.split("/")
+    if parts[0] in ["backend", "frontend", ".git", ".venv", "node_modules", ".agents"]:
+        raise HTTPException(status_code=403, detail="Access denied: cannot modify system workspace directories.")
+        
+    try:
+        os.makedirs(os.path.dirname(full_path), exist_ok=True)
+        with open(full_path, "w", encoding="utf-8") as f:
+            f.write(content)
+        return {"status": "success", "path": path}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to save file: {str(e)}")
+
+@app.delete("/api/workspace/file")
+def delete_workspace_file(path: str):
+    workspace_dir = settings.WORKSPACE_DIR
+    full_path = os.path.abspath(os.path.join(workspace_dir, path))
+    if not full_path.startswith(os.path.abspath(workspace_dir)):
+        raise HTTPException(status_code=403, detail="Access denied: outside workspace bounds.")
+        
+    rel_path = os.path.relpath(full_path, workspace_dir).replace("\\", "/")
+    parts = rel_path.split("/")
+    if parts[0] in ["backend", "frontend", ".git", ".venv", "node_modules", ".agents"]:
+        raise HTTPException(status_code=403, detail="Access denied: cannot delete files in system directories.")
+        
+    if not os.path.exists(full_path) or os.path.isdir(full_path):
+        raise HTTPException(status_code=404, detail="File not found.")
+        
+    try:
+        os.remove(full_path)
+        return {"status": "success", "path": path}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete file: {str(e)}")
+
+@app.get("/api/workspace/preview/{file_path:path}")
+def preview_workspace_file_render(file_path: str):
+    workspace_dir = settings.WORKSPACE_DIR
+    full_path = os.path.abspath(os.path.join(workspace_dir, file_path))
+    if not full_path.startswith(os.path.abspath(workspace_dir)):
+        raise HTTPException(status_code=403, detail="Access denied: outside workspace bounds.")
+        
+    rel_path = os.path.relpath(full_path, workspace_dir).replace("\\", "/")
+    parts = rel_path.split("/")
+    if parts[0] in ["backend", "frontend", ".git", ".venv", "node_modules", ".agents"]:
+        raise HTTPException(status_code=403, detail="Access denied: cannot preview system folders.")
+        
+    if not os.path.exists(full_path) or os.path.isdir(full_path):
+        raise HTTPException(status_code=404, detail="File not found.")
+        
+    mime_type, _ = mimetypes.guess_type(full_path)
+    return FileResponse(full_path, media_type=mime_type or "text/plain")
+
