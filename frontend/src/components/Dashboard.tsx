@@ -52,6 +52,21 @@ export default function Dashboard() {
   const logTerminalEndRef = useRef<HTMLDivElement | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
 
+  const [isOfflineMode, setIsOfflineMode] = useState(false);
+
+  useEffect(() => {
+    const handleOffline = () => {
+      setIsOfflineMode(true);
+    };
+    window.addEventListener("slm-offline-mode", handleOffline);
+    if (apiService.isOfflineMode()) {
+      setIsOfflineMode(true);
+    }
+    return () => {
+      window.removeEventListener("slm-offline-mode", handleOffline);
+    };
+  }, []);
+
   // Load initial goals and metrics
   useEffect(() => {
     loadGoals();
@@ -74,14 +89,30 @@ export default function Dashboard() {
 
   // Handle SSE Logs connection
   useEffect(() => {
-    if (selectedGoalId) {
-      // Clear logs
-      setLogs([]);
-      
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close();
-      }
+    if (!selectedGoalId) return;
 
+    // Clear logs
+    setLogs([]);
+    
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+      eventSourceRef.current = null;
+    }
+
+    const isMock = selectedGoalId.startsWith("mock-") || isOfflineMode;
+
+    if (isMock) {
+      // Simulate real-time streaming polling
+      const interval = setInterval(async () => {
+        try {
+          const mockData = await apiService.fetchMockLogs(selectedGoalId);
+          setLogs(mockData);
+        } catch (e) {
+          console.error(e);
+        }
+      }, 1000);
+      return () => clearInterval(interval);
+    } else {
       const streamUrl = apiService.getLogsStreamUrl(selectedGoalId);
       const es = new EventSource(streamUrl);
       eventSourceRef.current = es;
@@ -103,14 +134,15 @@ export default function Dashboard() {
         console.log("SSE Connection closed or errored.");
         es.close();
       };
-    }
 
-    return () => {
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close();
-      }
-    };
-  }, [selectedGoalId]);
+      return () => {
+        if (eventSourceRef.current) {
+          eventSourceRef.current.close();
+          eventSourceRef.current = null;
+        }
+      };
+    }
+  }, [selectedGoalId, isOfflineMode]);
 
   // Scroll terminal logs to bottom
   useEffect(() => {
@@ -1026,7 +1058,8 @@ export default function Dashboard() {
                             {/* Browser iframe */}
                             <iframe
                               key={selectedFilePath + "_" + selectedFileContent.length}
-                              src={apiService.getWorkspaceFilePreviewUrl(selectedFilePath)}
+                              src={selectedGoalId?.startsWith("mock-") || isOfflineMode ? undefined : apiService.getWorkspaceFilePreviewUrl(selectedFilePath)}
+                              srcDoc={selectedGoalId?.startsWith("mock-") || isOfflineMode ? selectedFileContent : undefined}
                               className="flex-1 w-full bg-white border-none"
                               title="Workspace Sandbox Live View"
                             />
