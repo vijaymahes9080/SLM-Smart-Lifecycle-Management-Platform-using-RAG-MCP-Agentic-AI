@@ -2,11 +2,15 @@
 
 > **Tagline**: *"Understand ➔ Plan ➔ Execute ➔ Learn ➔ Evolve"*
 
+![SLM Interactive Sandbox & IDE](assets/sandbox_dashboard.png)
+
 SLM is an AI-powered Lifecycle Operating System designed to manage the entire lifecycle of goals, tasks, operations, and knowledge. The platform utilizes **Retrieval-Augmented Generation (RAG)**, **Model Context Protocol (MCP)** tools execution, and a **LangGraph-driven Multi-Agent Orchestration Network** to transform goals into continuously evolving outcomes.
 
 ---
 
 ## 🏗️ System Architecture
+
+![SLM System Architecture](assets/system_architecture.png)
 
 ```
                   ┌──────────────────────────────┐
