@@ -54,6 +54,8 @@ SLM is an AI-powered Lifecycle Operating System designed to manage the entire li
 6. **Agentic Execution Layer**: Creates collaborative teams of 10 specialized agent roles (Planner, Researcher, Architect, Builder, Tester, Deployer, Monitor, Optimizer, Security, Coordinator).
 7. **Memory + Knowledge System**: Stores facts and outcomes across session, long-term, lifecycle, and organizational layers.
 8. **Real-time SSE Operations Console**: Streams execution logs, file changes, and agent thoughts to a responsive CLI console interface in the browser.
+9. **Interactive Live Sandbox & IDE**: Browse, search, view, and edit files written by MCP Builder agents in real-time. Includes an interactive live rendering canvas for HTML and SVG documents with desktop/mobile viewport toggle settings.
+
 
 ---
 
